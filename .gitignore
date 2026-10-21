@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Build outputs
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Generated Prisma client
+/apps/api/generated/prisma/
+
+# Optional AI-agent skill documentation
+/apps/api/.agents/skills/
+/apps/api/.claude/skills/
+/apps/api/.windsurf/skills/
+
+# Local files
+*.log
+.DS_Store
+Thumbs.db

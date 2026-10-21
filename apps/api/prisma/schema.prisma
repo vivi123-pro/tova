@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RecordingStatus {
+  PENDING
+  PROCESSING
+  READY_FOR_REVIEW
+  FAILED
+  CONFIRMED
+  DISCARDED
+}
+
+model Recording {
+  id             String          @id @default(uuid())
+  status         RecordingStatus @default(PENDING)
+  audioPath      String?
+  transcript     String?
+  extractedData  Json?
+  attemptCount   Int             @default(0)
+  leaseExpiresAt DateTime?
+  lastError      String?
+  recordedAt     DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  sale           Sale?
+}
+
+model Sale {
+  id          String     @id @default(uuid())
+  recordingId String?    @unique
+  recording   Recording? @relation(fields: [recordingId], references: [id])
+
+  totalAmount Decimal    @db.Decimal(14, 2)
+  soldAt      DateTime   @default(now())
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  items       SaleItem[]
+}
+
+model SaleItem {
+  id            String   @id @default(uuid())
+  saleId        String
+  sale          Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  name          String
+  quantity      Int
+  unit          String
+  piecesPerUnit Int?
+  unitPrice     Decimal  @db.Decimal(14, 2)
+  lineTotal     Decimal  @db.Decimal(14, 2)
+
+  createdAt     DateTime @default(now())
+}
