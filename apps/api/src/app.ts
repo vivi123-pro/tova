@@ -5,6 +5,7 @@ import { salesSummary, type SaleReader } from "./sales-read.js";
 import { transcriptionRouter, type Transcribe } from "./transcriptions.js";
 import { extractionRouter, type Extract } from "./extraction.js";
 import { catalogueRouter, type CatalogueClient } from "./catalogue.js";
+import { databaseFailure } from "./database-diagnostics.js";
 
 export function createApp(db: SaleWriter & { sale: Partial<SaleReader["sale"]> } & Partial<CatalogueClient>, transcribe?: Transcribe, extract?: Extract, localCors = true) {
   const app = express();
@@ -44,8 +45,7 @@ export function createApp(db: SaleWriter & { sale: Partial<SaleReader["sale"]> }
     } else if (error?.type === "encoding.unsupported") {
       res.status(415).json({ error: "Compressed JSON bodies are unsupported." });
     } else {
-      const code = error && typeof error === "object" && typeof error.code === "string" && /^P\d{4}$/.test(error.code) ? error.code : "unknown";
-      console.error(JSON.stringify({ event: "sales_request_failed", operation: _req.method === "GET" ? "read" : "write", code }));
+      console.error(JSON.stringify({ event: "sales_request_failed", operation: _req.method === "GET" ? "read" : "write", ...databaseFailure(error) }));
       res.status(500).json({ error: _req.method === "GET" ? "Unable to load sales." : "Unable to create sale." });
     }
   };

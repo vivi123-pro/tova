@@ -187,6 +187,45 @@ Node, not necessarily the CLI. No migration or live database connection is neede
 to build/generate the client. Verify actual provider chains from the deployed host;
 local configuration tests cannot establish that Render trusts a particular server.
 
+### Diagnosing P1011 on sales reads
+
+The deployed request path is `DATABASE_URL` → `databasePoolConfig` →
+`PrismaPg` → node-postgres (`pg`) → Node TLS. Prisma's query compiler still runs,
+but the native CLI engine does not open these request connections. `DIRECT_URL`
+and the native `sslaccept=strict`/`sslcert` translation apply only to CLI commands.
+An adapter TLS error can be reported as Prisma `P1011`; that code does not prove
+the native engine is being used.
+
+At startup `database_configuration` logs only driver, Node version, production
+flag, endpoint category, TLS mode, CA source and a client-certificate/key warning.
+It never logs a hostname, username, password, connection URL, certificate or path.
+For the normal production configuration expect `driver=prisma-pg`, `production=true`
+and `tls=verified`. The public `/health` checks only Express, not database connectivity.
+
+Sales failures retain generic HTTP 500 responses. Their server-only
+`sales_request_failed` logs now include an allowlisted `tlsCategory` when possible:
+
+| Category | What to inspect privately on Render |
+| --- | --- |
+| `certificate_chain_untrusted` | Confirm the intended Supabase project's current CA; if needed configure `DATABASE_CA_PATH` or a proper URL `sslrootcert`. Default Node roots do not guarantee trust of a provider/private CA. |
+| `hostname_mismatch` | Use the exact dashboard hostname for that connection endpoint; do not substitute an IP, custom alias, or a different pooler host. |
+| `certificate_expired` / `certificate_not_yet_valid` | Check the actual server chain, certificate rotation and host clock. |
+| `tls_cause_unavailable` | Prisma did not retain a recognized reason; inspect sanitized underlying TLS details privately. This is not proof of a CA problem. |
+
+`sslcert` in pg means a **client certificate**, while Prisma CLI's native URL
+uses it for a server trust certificate. Never copy CLI-only TLS parameters into
+`DATABASE_URL` expecting the same meaning. `clientCertificateWithoutKey=true`
+can reveal that mix-up; do not automatically reinterpret or trust that file.
+
+For Render's persistent API, the dashboard session pooler (5432) is a practical
+IPv4 option. Transaction pooling (6543) is a separate endpoint choice, not a TLS
+verification fix. The installed adapter uses unnamed queries by default; no
+statement-name generator is configured here. Prepared-statement and connection
+limit issues are separate from TLS certificate errors. Do not change endpoints,
+credentials, or CA files based only on `P1011`; verify the deployed settings first.
+Use a migration-compatible direct/session URL for the CLI. No diagnostic change
+here queries the database at startup or applies migrations.
+
 ## Render backend (manual)
 
 1. Create a Web Service from the reviewed repository/branch. Include the current
