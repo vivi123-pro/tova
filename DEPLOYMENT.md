@@ -60,7 +60,7 @@ existing local `.env` with these placeholders.
 | `PORT` | Supplied by Render; default local value is 4000 |
 | `CORS_ORIGINS` | Comma-separated exact HTTPS Vercel production origins; no trailing slashes, paths or wildcards |
 | `DATABASE_URL` | Demo runtime PostgreSQL URL; direct or session-pooler connection |
-| `DATABASE_CA_PATH` | Trusted CA file path; required in production, relative to API process working directory or absolute Linux path |
+| `DATABASE_CA_PATH` | Optional custom trusted CA file; omit for default trust roots. Relative to API working directory or absolute Linux path |
 | `DIRECT_URL` | Demo migration connection; needed only for migration config, not runtime/generation |
 | `GROQ_API_KEY` | Backend-only Groq key for both endpoints |
 | `DEMO_USERS_JSON` | Exactly two IDs mapped to separately generated salted scrypt hashes |
@@ -125,16 +125,17 @@ uncompressed JSON. Parser/upload packages include the compatible security fixes.
 
 ## Supabase demo project (manual; no remote commands were executed)
 
-1. Create a new project and keep its data synthetic. Obtain its database URLs and
-   CA from the authenticated dashboard. The checked-in CA is public, but verify it
-   against the intended project's CA; replace/provide the appropriate public CA if needed.
+1. Create a new project and keep its data synthetic. Obtain its database URLs from
+   the authenticated dashboard. No CA file is required if the server's certificate
+   chains to the runtime's default trusted roots. For a private/provider CA, obtain
+   the intended project's CA from the dashboard and configure it explicitly.
 2. Use the direct connection if IPv6 works from the host, otherwise the Supavisor
    **session pooler** for IPv4. Use a direct or migration-compatible session
    connection for `DIRECT_URL`, not transaction pooling.
 3. Run migration commands from `apps/api` in a **private environment configured
    only for the new demo project**. Confirm the project identity before any write.
-   Set `DATABASE_CA_PATH` to the local trusted CA file; do not reuse a Windows
-   absolute `sslrootcert` path on Render.
+   Set `DATABASE_CA_PATH` only if a custom trusted CA is needed. Remove obsolete
+   Windows `sslrootcert` paths from the URLs when using default trust on Render.
 4. Inspect history first, then apply the reviewed migrations only to the new demo:
 
 ```sh
@@ -149,11 +150,42 @@ nonzero when migrations are pending. Do not use `migrate reset`, `db push`, or
 Review Supabase Data API exposure/RLS for these tables; this application uses
 server-side PostgreSQL and does not need anonymous browser database access.
 
-Runtime and migration helpers resolve `DATABASE_CA_PATH` on the current OS,
-override obsolete URL CA paths, and require certificate/hostname verification.
-The Prisma migration config translates pg's `verify-full` parameters to the
-Prisma native-engine equivalents; it does not disable verification. No
-`NODE_TLS_REJECT_UNAUTHORIZED=0` or `rejectUnauthorized:false` is needed.
+### PostgreSQL TLS verification
+
+Production always selects verified TLS, even if the URL requests `disable`,
+`prefer`, `require`, `verify-ca` or `no-verify`. Unix sockets, which bypass pg TLS,
+are rejected in production. `@prisma/adapter-pg` passes the pool configuration to
+`pg`; the runtime consumes URL TLS options before constructing the pool so they
+cannot overwrite its explicit `ssl: { rejectUnauthorized: true }`.
+
+Without a custom CA, no `ca` option is passed: Node verifies the server chain and
+certificate validity against its default trust roots, normally its bundled public
+CA set (plus any roots enabled by Node startup settings). This is not necessarily
+the same as the host OS certificate store. pg supplies the destination hostname
+to Node TLS, and Node's default `checkServerIdentity` remains in place to verify
+the certificate's hostname/IP identity. Encryption alone is not accepted.
+
+If `DATABASE_CA_PATH` is supplied, it resolves relative to the API working directory
+or as an absolute path, overrides a URL `sslrootcert`, and provides the trusted CA
+to Node. An explicit URL `sslrootcert` is also honored. Node's explicit `ca` replaces
+its default CA set for that connection; it does not turn off certificate or hostname
+verification. Invalid/unreadable explicitly configured files fail closed rather
+than silently falling back to default roots. Existing `sslcert`/`sslkey` client
+certificate options are preserved for pg when explicitly supplied.
+
+For the normal Render setup, leave `DATABASE_CA_PATH` unset and remove stale
+`sslrootcert`, `sslcert`, and `sslkey` file paths from the connection URL. A provider
+certificate that does not chain to Node's trusted roots will still fail securely;
+use the provider's trusted CA in that case. Never use `sslrootcert=system` with pg:
+it treats `system` as a filename. Do not set `NODE_TLS_REJECT_UNAUTHORIZED=0`.
+
+Prisma migration commands use a separate native TLS stack, not Node/pg. The CLI
+config translates `verify-full` into `sslmode=require&sslaccept=strict`, with the
+optional root mapped to `sslcert`. Without a custom root it uses the native stack's
+default trust store, which can differ from Node's. `NODE_EXTRA_CA_CERTS` affects
+Node, not necessarily the CLI. No migration or live database connection is needed
+to build/generate the client. Verify actual provider chains from the deployed host;
+local configuration tests cannot establish that Render trusts a particular server.
 
 ## Render backend (manual)
 
@@ -163,9 +195,10 @@ Prisma native-engine equivalents; it does not disable verification. No
    workspaces are available.
 3. Set Build Command to `npm ci --include=dev && npm run build -w api`.
 4. Set Start Command to `npm run start -w api` and Health Check Path to `/health`.
-5. Configure the private environment above. Since the workspace start script runs
-   in `apps/api`, `DATABASE_CA_PATH=certs/prod-ca-2021.crt` resolves there. Alternatively
-   mount the intended public CA as a Render secret file and set its absolute path.
+5. Configure the private environment above. Normally omit `DATABASE_CA_PATH` and
+   use a file-free URL with the provider's certificate-matching hostname. If a
+   custom CA is needed, `DATABASE_CA_PATH=certs/prod-ca-2021.crt` resolves relative
+   to `apps/api`; alternatively mount a trusted CA file and set its absolute path.
 6. Set the exact Vercel production origin(s) in `CORS_ORIGINS`. Preflight accepts
    `Authorization`, `Content-Type`, and `Idempotency-Key`. Cookies are not used.
 7. Deploy only after review. `/health` is public and checks the process, not DB/Groq.

@@ -92,7 +92,7 @@ test("missing configuration fails closed and production TLS uses a portable veri
   assert.throws(() => demoConfig({}));
   assert.throws(() => demoConfig({ DEMO_TOKEN_SECRET: baseConfig.secret, DEMO_USERS_JSON: JSON.stringify(users), DEMO_ACCESS_EXPIRES_AT: "yesterday" }));
   assert.throws(() => databaseUrl("not-a-url"));
-  assert.throws(() => databaseUrl("postgresql://user:password@db.example/demo", { NODE_ENV: "production" }));
+  assert.equal(new URL(databaseUrl("postgresql://user:password@db.example/demo", { NODE_ENV: "production" })).searchParams.get("sslmode"), "verify-full");
   const url = new URL(databaseUrl("postgresql://user:password@db.example/demo?sslmode=disable&sslrootcert=C%3A%2Fobsolete.crt", { NODE_ENV: "production", DATABASE_CA_PATH: "certs/prod-ca-2021.crt" }));
   assert.equal(url.searchParams.get("sslmode"), "verify-full");
   assert.match(url.searchParams.get("sslrootcert")!, /certs\/prod-ca-2021.crt$/);

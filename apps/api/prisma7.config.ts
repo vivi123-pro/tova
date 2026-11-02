@@ -2,22 +2,7 @@
 // npm install --save-dev prisma dotenv
 import "dotenv/config";
 import { defineConfig, env } from "prisma/config";
-import { databaseUrl } from "./src/database-config.ts";
-
-const datasourceUrl = new URL(databaseUrl(env("DIRECT_URL")));
-
-// Prisma 7.10's native schema engine uses different names from node-postgres.
-// Translate verify-full without allowing plaintext or skipping verification.
-if (datasourceUrl.searchParams.get("sslmode") === "verify-full") {
-  const rootCertificate = datasourceUrl.searchParams.get("sslrootcert");
-  if (!rootCertificate) {
-    throw new Error("DIRECT_URL verify-full requires sslrootcert");
-  }
-  datasourceUrl.searchParams.set("sslmode", "require");
-  datasourceUrl.searchParams.set("sslcert", rootCertificate);
-  datasourceUrl.searchParams.set("sslaccept", "strict");
-  datasourceUrl.searchParams.delete("sslrootcert");
-}
+import { prismaDatabaseUrl } from "./src/database-config.ts";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -25,6 +10,6 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: datasourceUrl.toString(),
+    url: prismaDatabaseUrl(env("DIRECT_URL")),
   },
 });
