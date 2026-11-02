@@ -1,8 +1,11 @@
 export type DraftItem = { name: string | null; quantity: number | null; unit: string | null; unitPrice: string | null; lineTotal: string | null };
 export type DraftIssue = { itemIndex: number | null; field: "name" | "quantity" | "unit" | "unitPrice" | null; code: string };
 export type SalesDraft = { currency: "NGN"; requiresReview: boolean; items: DraftItem[]; totalAmount: string | null; issues: DraftIssue[] };
-export type SalePayload = { items: { name: string; quantity: number; unit: string; unitPrice: string }[] };
-export type Sale = { id: string; soldAt: string; totalAmount: string; items: { id: string; name: string; quantity: number; unit: string; unitPrice: string; lineTotal: string }[] };
+export type ProductRef = { id: string; canonicalName: string };
+export type ProductMatch = { matched: boolean; matchType: "canonical" | "alias" | null; product: ProductRef | null };
+export type ProductsPage = { products: ProductRef[]; nextCursor: string | null };
+export type SalePayload = { items: { name: string; quantity: number; unit: string; unitPrice: string; productId?: string }[] };
+export type Sale = { id: string; soldAt: string; totalAmount: string; items: { id: string; name: string; quantity: number; unit: string; unitPrice: string; lineTotal: string; productId?: string | null }[] };
 export type SalesPage = { sales: Sale[]; nextCursor: string | null };
 export type SalesSummary = { date: string; timeZone: "Africa/Lagos"; totalAmount: string; saleCount: number };
 export function object(value: unknown): Record<string, unknown> {
@@ -12,6 +15,29 @@ export function object(value: unknown): Record<string, unknown> {
 export function text(value: unknown, max = 500): string {
   if (typeof value !== "string" || !value.trim() || value.length > max) throw new Error("Invalid API response.");
   return value;
+}
+export function productId(value: unknown): string {
+  if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) throw new Error("Invalid product ID.");
+  return value.toLowerCase();
+}
+export function parseProduct(value: unknown): ProductRef {
+  const p = object(value);
+  return { id: productId(p.id), canonicalName: text(p.canonicalName, 200) };
+}
+export function parseMatches(value: unknown, count: number): ProductMatch[] {
+  const v = object(value);
+  if (!Array.isArray(v.matches) || v.matches.length !== count) throw new Error("Invalid product matches.");
+  return v.matches.map(value => {
+    const match = object(value);
+    if (match.matched === false && match.product === null && match.matchType === null) return { matched: false, product: null, matchType: null };
+    if (match.matched !== true || !["canonical", "alias"].includes(String(match.matchType))) throw new Error("Invalid product match.");
+    return { matched: true, product: parseProduct(match.product), matchType: match.matchType as "canonical" | "alias" };
+  });
+}
+export function parseProductsPage(value: unknown): ProductsPage {
+  const page = object(value);
+  if (!Array.isArray(page.products) || page.products.length > 50) throw new Error("Invalid products list.");
+  return { products: page.products.map(parseProduct), nextCursor: page.nextCursor === null ? null : productId(page.nextCursor) };
 }
 function money(value: unknown) {
   const result = text(value, 40);
@@ -43,7 +69,7 @@ export function parseSale(value: unknown): Sale {
   if (!Number.isFinite(Date.parse(soldAt)) || !Array.isArray(sale.items) || sale.items.length > 100) throw new Error("Invalid saved sale.");
   return { id: text(sale.id, 100), soldAt, totalAmount: money(sale.totalAmount), items: sale.items.map(value => {
     const item = object(value);
-    return { id: text(item.id, 100), name: text(item.name, 200), quantity: quantity(item.quantity), unit: text(item.unit, 50), unitPrice: money(item.unitPrice), lineTotal: money(item.lineTotal) };
+    return { id: text(item.id, 100), name: text(item.name, 200), quantity: quantity(item.quantity), unit: text(item.unit, 50), unitPrice: money(item.unitPrice), lineTotal: money(item.lineTotal), ...(item.productId !== undefined ? { productId: item.productId === null ? null : productId(item.productId) } : {}) };
   }) };
 }
 export function parseSalesPage(value: unknown): SalesPage {

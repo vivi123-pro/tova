@@ -2,8 +2,9 @@
 // npm install --save-dev prisma dotenv
 import "dotenv/config";
 import { defineConfig, env } from "prisma/config";
+import { databaseUrl } from "./src/database-config.ts";
 
-const datasourceUrl = new URL(env("DIRECT_URL"));
+const datasourceUrl = new URL(databaseUrl(env("DIRECT_URL")));
 
 // Prisma 7.10's native schema engine uses different names from node-postgres.
 // Translate verify-full without allowing plaintext or skipping verification.

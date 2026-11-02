@@ -25,7 +25,7 @@ test("idempotent concurrent/retried saves reuse the primary key and reject chang
       if (!data.id) throw new Error("Test needs key");
       if (saved.has(data.id)) throw Object.assign(new Error("duplicate"), { code: "P2002" });
       const now = new Date();
-      const sale: StoredSale = { id: data.id, totalAmount: data.totalAmount, recordingId: null, soldAt: now, createdAt: now, updatedAt: now, items: data.items.create.map((item, index) => ({ ...item, id: String(index), saleId: data.id ?? "", piecesPerUnit: item.piecesPerUnit ?? null, createdAt: now })) };
+      const sale: StoredSale = { id: data.id, totalAmount: data.totalAmount, recordingId: null, soldAt: now, createdAt: now, updatedAt: now, items: data.items.create.map((item, index) => ({ ...item, id: String(index), saleId: data.id ?? "", piecesPerUnit: item.piecesPerUnit ?? null, productId: item.productId ?? null, createdAt: now })) };
       saved.set(data.id, sale); created++; return sale;
     },
     findUnique: async ({ where }) => saved.get(where.id) ?? null,

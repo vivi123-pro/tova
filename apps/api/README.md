@@ -1,5 +1,12 @@
 # Tova API
 
+**Deployment readiness update:** see [DEPLOYMENT.md](../../DEPLOYMENT.md) for the
+current protected demo entry point, required demo credentials, production CORS,
+TLS and build commands. The localhost-only/no-auth statements below describe
+earlier milestones. The executable API now requires demo access configuration
+in development as well as production; it defaults to binding `0.0.0.0` (set
+`HOST=127.0.0.1` for local-only use). No remote migrations are run by builds.
+
 Run `npm run dev -w api` from the repository root. The API binds only to
 `127.0.0.1` (port 4000 by default). Keep it local while authentication is absent;
 do not publish it through a tunnel or reverse proxy.
@@ -190,3 +197,90 @@ No schema changes, new dependencies, migrations or background jobs were added.
 Browser `audio/mp4` is uploaded as `.m4a`; existing ftyp validation still applies.
 The frontend base URL is configured through its public NEXT_PUBLIC_API_BASE_URL;
 Groq and database secrets stay exclusively in apps/api/.env.
+
+## Product catalogue (Milestone 1)
+
+The catalogue introduces stable product UUIDs without changing recorded item
+names. `Product` stores the canonical name. `ProductAlias` is a shared name
+registry: product creation reserves its canonical name there (`isCanonical`
+is true), and explicitly confirmed aliases use the same unique normalized key.
+Both records are created in one transaction, so canonical names and aliases
+cannot claim a name already owned by another product. Canonical reservations
+are omitted from the public alias list. Write catalogue records through these
+operations rather than inserting products directly without their reservation.
+
+Names use Unicode NFKC normalization, trimmed/collapsed whitespace and lowercase
+keys for exact matching. Display casing is retained. Punctuation, accents,
+plurals and brand words are not removed: `Nike sneakers` is unknown until that
+exact normalized name is explicitly registered, even if `Sneakers` exists.
+Names must contain 1-200 visible characters. There is no fuzzy matching, AI
+merging, automatic alias creation, renaming or deletion endpoint.
+
+Operations use the existing localhost-only API and JSON bodies:
+
+| Operation | Request | Response |
+| --- | --- | --- |
+| List | `GET /products?limit=20&cursor=<last-product-id>` | `{ products: [{ id, canonicalName, createdAt, aliases: [{ id, name }] }], nextCursor }` |
+| Create | `POST /products` with `{ "canonicalName": "Sneakers" }` | 201 with `{ id, canonicalName, createdAt, aliases: [] }` |
+| Resolve | `POST /products/resolve` with `{ "names": ["Sneakers", "Nike sneakers"] }` | `{ matches: [{ name, normalizedName, matched, matchType, product }] }` |
+| Confirm alias | `POST /products/<product-id>/aliases` with `{ "name": "Nike sneakers", "confirmed": true }` | 201 with `{ registration: { id, productId, name, kind }, created: true }` |
+
+List limits are 1-50, ordered by stable ID. Resolution accepts 1-100 names,
+preserves input order, and never writes. Matches have `matchType` of `canonical`
+or `alias` and `product: { id, canonicalName }`; unknown names have null for both.
+Confirming an already-owned name returns 200 with `created: false`, including a
+canonical name whose `kind` is `canonical`. Cross-product name conflicts return
+409. Invalid input or missing explicit confirmation returns 400; a missing
+target product returns 404. Unexpected failures return a generic 500 with only
+an allowlisted database error code logged server-side.
+
+`POST /sales` additionally accepts an optional `productId` UUID (or null) per
+item. The caller must explicitly select the product; even an existing confirmed
+alias does not cause automatic linkage during saving. The referenced product
+must exist. `name` still stores the original reviewed item name, and prices,
+units and totals retain their existing behavior. The product selection is part
+of the idempotency comparison. Legacy callers may omit it and continue saving
+unlinked items. Existing sales reads include the new nullable `productId`.
+Extraction and transcription do not read or write the catalogue.
+
+### Catalogue migration deployment
+
+`prisma/migrations/20261022090000_product_catalogue/migration.sql` creates the
+catalogue tables, indexes and nullable foreign key. It contains no historical
+data updates, deletion or backfill. Existing item product IDs remain null.
+Linked products cannot be deleted while sale items reference them.
+
+The development Supabase migration was applied successfully by the user before
+the review integration milestone. For another database that does not yet have
+it, run these commands from `apps/api` to apply checked-in migrations and
+regenerate the client:
+
+```powershell
+npx prisma migrate deploy --config prisma7.config.ts
+npx prisma generate --config prisma7.config.ts
+```
+
+Then build from the repository root with `npm run build -w api` and restart the
+API using the existing scripts. New Prisma queries expect the nullable column,
+so apply the migration before starting the updated API. The additive DDL still
+needs database locks and an index scan; schedule a quiet development window.
+It runs in a transaction with a 5-second lock timeout and 60-second statement
+timeout, rolling back on failure rather than leaving partial schema changes.
+If Prisma records a failed migration, inspect its status and confirm rollback
+before using Prisma's failed-migration recovery process; do not reset the DB.
+
+Catalogue regression tests use an injected transactional database substitute
+and local HTTP server. They cover normalization, canonical/alias conflicts,
+rollback, explicit confirmation, unknown names, historical item preservation,
+explicit sale linking, idempotency and legacy API compatibility. Schema
+validation and migration SQL inspection do not replace applying and verifying
+the migration against PostgreSQL. No test sales or catalogue records are
+inserted into Supabase by these tests. The frontend now integrates product
+selection and alias confirmation using these existing contracts: extraction is
+followed by a separate batch resolution call, and sale items send the selected
+product UUID while retaining their reviewed name. New UI reviews require a
+match; legacy API callers can still omit product IDs. An HTTP regression test
+drives the actual frontend client and flow through Express with an in-memory
+database, including lost-response recovery and unchanged historical items.
+Categories, brands, inventory, variants, analytics and historical backfill
+remain outside this milestone.

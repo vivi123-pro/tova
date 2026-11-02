@@ -4,14 +4,16 @@ import { createSale, IdempotencyConflict, ValidationError, type SaleWriter } fro
 import { salesSummary, type SaleReader } from "./sales-read.js";
 import { transcriptionRouter, type Transcribe } from "./transcriptions.js";
 import { extractionRouter, type Extract } from "./extraction.js";
+import { catalogueRouter, type CatalogueClient } from "./catalogue.js";
 
-export function createApp(db: SaleWriter & { sale: Partial<SaleReader["sale"]> }, transcribe?: Transcribe, extract?: Extract) {
+export function createApp(db: SaleWriter & { sale: Partial<SaleReader["sale"]> } & Partial<CatalogueClient>, transcribe?: Transcribe, extract?: Extract, localCors = true) {
   const app = express();
-  app.use(cors({ origin: ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3010", "http://127.0.0.1:3010"], allowedHeaders: ["Content-Type", "Idempotency-Key"] }));
-  app.use(express.json({ limit: "64kb" }));
+  if (localCors) app.use(cors({ origin: ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3010", "http://127.0.0.1:3010"], allowedHeaders: ["Content-Type", "Idempotency-Key"] }));
+  app.use(express.json({ limit: "64kb", inflate: false }));
   app.get("/health", (_req, res) => res.json({ status: "ok", service: "tova-api" }));
   app.use("/transcriptions", transcriptionRouter(transcribe));
   app.use("/sales/extract", extractionRouter(extract));
+  app.use("/products", catalogueRouter(db));
   app.get("/sales/summary", async (_req, res) => {
     if (!db.sale.aggregate) return res.status(503).json({ error: "Sales reads are unavailable." });
     res.set("Cache-Control", "no-store").json(await salesSummary({ sale: { aggregate: db.sale.aggregate } }));
@@ -39,6 +41,8 @@ export function createApp(db: SaleWriter & { sale: Partial<SaleReader["sale"]> }
       res.status(400).json({ error: "Invalid JSON body." });
     } else if (error?.type === "entity.too.large") {
       res.status(413).json({ error: "Request body is too large." });
+    } else if (error?.type === "encoding.unsupported") {
+      res.status(415).json({ error: "Compressed JSON bodies are unsupported." });
     } else {
       const code = error && typeof error === "object" && typeof error.code === "string" && /^P\d{4}$/.test(error.code) ? error.code : "unknown";
       console.error(JSON.stringify({ event: "sales_request_failed", operation: _req.method === "GET" ? "read" : "write", code }));

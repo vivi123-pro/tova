@@ -12,7 +12,7 @@ test("audio uploads use file field, real container extension, normalized MIME an
   for (const [mime, expected] of [["audio/webm;codecs=opus", "webm"], ["audio/mp4;codecs=mp4a.40.2", "m4a"], ["audio/ogg;codecs=opus", "ogg"]]) {
     const api = createApi("http://localhost:4000/", async (url, init) => {
       assert.equal(url, "http://localhost:4000/transcriptions");
-      assert.equal(init.headers, undefined);
+      assert.equal(new Headers(init.headers).has("Content-Type"), false);
       const file = init.body.get("file");
       assert.equal(file.name, `recording.${expected}`);
       assert.equal(file.type, mime.split(";")[0]);
@@ -58,7 +58,7 @@ test("API extraction/save requests send only actual contract fields and retain i
       assert.deepEqual(JSON.parse(init.body), { transcript: "two dozen gowns" });
       return Response.json(draft);
     }
-    assert.equal(init.headers["Idempotency-Key"], key);
+    assert.equal(new Headers(init.headers).get("Idempotency-Key"), key);
     assert.deepEqual(JSON.parse(init.body), checked.payload);
     return Response.json(sale, { status: 201 });
   });

@@ -8,6 +8,7 @@ import { Card, PageHeader, EmptyState } from "@/components/ui/presentation";
 import { Icon } from "@/components/ui/icon";
 import { emptyRow, formatNgn, validateReview, type ReviewRow } from "../review";
 import { useSalesSession } from "./sales-session";
+import { ProductMatch } from "./product-match";
 
 export function ReviewScreen() {
   const { state, flow, recorder } = useSalesSession();
@@ -16,7 +17,10 @@ export function ReviewScreen() {
   const checked = validateReview(state.rows);
   const locked = !!state.attempt;
   const busy = state.phase === "saving";
-  const update = (id: string, field: keyof Omit<ReviewRow, "id">, value: string) => flow.updateRows(state.rows.map(row => row.id === id ? { ...row, [field]: value } : row));
+  const update = (id: string, field: keyof Pick<ReviewRow, "name" | "quantity" | "unit" | "unitPrice">, value: string) => {
+    setAcknowledged(false);
+    flow.updateRows(state.rows.map(row => row.id === id ? { ...row, [field]: value } : row));
+  };
   if (state.phase === "saved" && state.savedSale) return <>
     <PageHeader eyebrow="ONE LESS THING TO REMEMBER" title="Sale saved"><p>Your confirmed sale is safely recorded.</p></PageHeader>
     <Card className="review-success"><Icon name="check" width="40" height="40" /><h2>{formatNgn(state.savedSale.totalAmount)}</h2><p>{state.savedSale.items.length} item lines saved.</p><p className="preview-note">Sale ID: {state.savedSale.id}</p><div className="recorder-actions"><Link href="/history" className={buttonClassName("secondary")}>View history</Link><Button onClick={() => { flow.reset(); recorder.cancel(); router.push("/record"); }}>Record another sale</Button></div></Card>
@@ -31,15 +35,17 @@ export function ReviewScreen() {
       <div className="review-items">{state.rows.map((row, index) => <Card key={row.id} className="review-item">
         <div className="section-heading"><h2>Item {index + 1}</h2><IconButton variant="ghost" label={`Remove item ${index + 1}`} disabled={locked} onClick={() => flow.updateRows(state.rows.filter(item => item.id !== row.id))}><Icon name="close" /></IconButton></div>
         <div className="review-fields">{([['name', 'Item name'], ['quantity', 'Quantity'], ['unit', 'Selling unit'], ['unitPrice', 'Price per unit (NGN)']] as const).map(([field, label]) => <div key={field} className={`form-field field-${field}`}>
-          <label htmlFor={`${row.id}-${field}`}>{label}</label><input id={`${row.id}-${field}`} value={row[field]} onChange={event => update(row.id, field, event.target.value)} disabled={locked} required inputMode={field === "quantity" ? "numeric" : field === "unitPrice" ? "decimal" : "text"} maxLength={field === "name" ? 200 : field === "unit" ? 50 : 30} list={field === "unit" ? "selling-units" : undefined} aria-invalid={!!checked.errors[index]?.[field]} aria-describedby={checked.errors[index]?.[field] ? `${row.id}-${field}-error` : undefined} />
+          <label htmlFor={`${row.id}-${field}`}>{label}</label><input id={`${row.id}-${field}`} value={row[field]} onChange={event => update(row.id, field, event.target.value)} onBlur={field === "name" ? () => void flow.resolveRows(row.id) : undefined} disabled={locked} required inputMode={field === "quantity" ? "numeric" : field === "unitPrice" ? "decimal" : "text"} maxLength={field === "name" ? 200 : field === "unit" ? 50 : 30} list={field === "unit" ? "selling-units" : undefined} aria-invalid={!!checked.errors[index]?.[field]} aria-describedby={checked.errors[index]?.[field] ? `${row.id}-${field}-error` : undefined} />
           {checked.errors[index]?.[field] && <span className="field-error" id={`${row.id}-${field}-error`}>{checked.errors[index][field]}</span>}
         </div>)}</div>
+        <ProductMatch key={`${row.id}:${row.name}`} row={row} flow={flow} locked={locked} />
         <p className="line-total">Line total <strong>{checked.lineTotals[index] ? formatNgn(checked.lineTotals[index]) : "Complete the item to calculate"}</strong></p>
       </Card>)}</div>
       <datalist id="selling-units">{["piece", "dozen", "pair", "pack", "bundle", "carton", "set"].map(unit => <option key={unit} value={unit} />)}</datalist>
       <Button variant="secondary" disabled={locked || state.rows.length >= 100} onClick={() => flow.updateRows([...state.rows, emptyRow()])}>Add item</Button>
       <div className="review-total"><span>Grand total <small>NGN · Calculated from your edits</small></span><strong>{checked.totalAmount ? formatNgn(checked.totalAmount) : "—"}</strong></div>
       {checked.formError && <p className="feedback feedback--error" role="alert">{checked.formError}</p>}
+      {!checked.catalogueReady && <p className="preview-note" role="status">Check the catalogue match for each item to continue.</p>}
       {!locked && <label className="review-check"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />I have checked all items, quantities, selling units, and prices.</label>}
       {state.error && <div className="feedback feedback--error" role="alert">{state.error}{locked && <p>Your original save is retained. Retry uses the same sale ID to prevent duplicates. Editing is paused until its result is confirmed.</p>}</div>}
       <Button type="submit" loading={busy} disabled={!checked.valid || (!acknowledged && !locked) || busy}>{state.phase === "save-error" ? "Retry save safely" : "Confirm and Save"}<Icon name="check" /></Button>

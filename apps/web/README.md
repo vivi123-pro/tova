@@ -1,5 +1,11 @@
 # Tova frontend - Milestone 2
 
+**Deployment readiness update:** see [DEPLOYMENT.md](../../DEPLOYMENT.md).
+The frontend now requires a temporary demo unlock before business screens mount.
+The older localhost-only/no-auth descriptions below are historical. Production
+builds require an explicit HTTPS `NEXT_PUBLIC_API_BASE_URL`; backend credentials
+and signing secrets must never be supplied to the frontend.
+
 The existing Next.js / Tailwind interface now supports record -> transcription -> extraction -> editable review -> explicit confirmation -> saved sales/history. No recording is automatically saved as a sale.
 
 ## Local setup
@@ -84,7 +90,54 @@ Manual integration: record a clearly labelled test sale, Continue, inspect the t
 Local single-business use only; no authentication or tenant ownership. Drafts are per-tab, not shared across devices. Forced storage clearing or bypassing idempotency can still produce duplicates. Authentication, production data access, cross-device drafts and broader speech-format/language support require future work. Model output always needs human review.
 
 
-## Milestone verification results
+## Catalogue matching and sale review
+
+After extraction, the client batches nonempty item names through
+`POST /products/resolve`. The Groq extraction contract is unchanged: matching
+is deterministic and separate from the model. A known canonical name or
+confirmed alias displays its canonical product below the editable item name.
+Selecting a product never replaces that recorded name.
+
+For unknown names, the review offers **Add to catalogue** defaulting to that item name,
+or **Use existing** with paginated catalogue loading. Each action opens a single
+inline form; known products use a compact **Matched to …** indicator. Linking an
+unfamiliar name requires checking the explicit alias-confirmation checkbox and
+pressing **Use this product**. A different name for a new canonical
+product also requires explicit alias confirmation, preserving the recorded name.
+Creation and alias registration are separate retry-safe operations; if alias
+registration fails after creation, the canonical product remains and retry
+recovers its ID instead of creating a duplicate. There is no fuzzy matching or
+automatic merging. Product creation and confirmed alias registration persist
+immediately, even if the draft is later discarded; they do not create a sale.
+
+Every item in a new review must have a resolved product before saving. Saving
+sends its `productId` alongside the existing name, quantity, unit and unitPrice.
+Backend decimal calculations and nested writes remain authoritative. Editing
+the name clears its selection; leaving the name field checks it again. Empty
+or uncertain names must be corrected first. Matching errors retain the draft
+and offer retry without repeating transcription or extraction. Stale async
+results cannot attach a product after a row is renamed, removed or discarded.
+
+Product-name uniqueness makes duplicate create requests harmless: a 409 is
+resolved through an exact catalogue lookup, recovering the existing stable ID
+after a lost response. Alias retries for the same product return success;
+cross-product conflicts remain errors until a fresh exact lookup confirms the
+owner. Failed sale saves retain their original key, exact payload and product
+selection, including across refresh. Drafts without a pending save recheck
+their catalogue matches on reload. Legacy pending saves retain their old
+payload without adding product IDs; historical sales accept null or absent IDs.
+
+The existing `/products` and `/sales` contracts suffice; no new dependencies,
+API routes or schema migration are needed. The already-applied product catalogue
+migration is required. Start the current API and frontend using their existing
+localhost-only scripts. Regression tests use fake services and an actual local
+Express server backed by in-memory delegates, never live Supabase writes.
+They cover matching, uncertainty, stale responses, creation/alias conflicts,
+pagination, refresh, lost responses, historical data and sale payloads.
+Production/local microphone testing with an existing catalogue remains a manual
+verification step; intentionally saving a real sale is outside this test run.
+
+## Milestone 2 verification results (prior milestone)
 
 Final checks passed: frontend lint, TypeScript, frontend production build,
 backend TypeScript build, 15 frontend tests and 23 backend tests. Isolated Chrome

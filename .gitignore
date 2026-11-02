@@ -12,6 +12,7 @@ dist/
 out/
 coverage/
 *.tsbuildinfo
+.verification/
 
 # Generated Prisma client
 /apps/api/generated/prisma/

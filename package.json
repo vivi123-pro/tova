@@ -2,8 +2,14 @@
   "name": "tova",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "verify:clean": "node scripts/verify-clean.mjs"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "engines": {
+    "node": "22.x"
+  }
 }

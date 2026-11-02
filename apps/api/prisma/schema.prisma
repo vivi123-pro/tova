@@ -50,6 +50,8 @@ model SaleItem {
   sale          Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   name          String
+  productId     String?
+  product       Product? @relation(fields: [productId], references: [id], onDelete: Restrict)
   quantity      Int
   unit          String
   piecesPerUnit Int?
@@ -57,4 +59,28 @@ model SaleItem {
   lineTotal     Decimal  @db.Decimal(14, 2)
 
   createdAt     DateTime @default(now())
+
+  @@index([productId])
+}
+
+model Product {
+  id            String         @id @default(uuid())
+  canonicalName String         @db.VarChar(200)
+  createdAt     DateTime       @default(now())
+  names         ProductAlias[]
+  saleItems     SaleItem[]
+}
+
+// One shared namespace for canonical-name reservations and confirmed aliases.
+// A product and its canonical reservation are always created in one transaction.
+model ProductAlias {
+  id             String   @id @default(uuid())
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name           String   @db.VarChar(200)
+  normalizedName String   @unique @db.VarChar(200)
+  isCanonical    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@index([productId])
 }

@@ -1,6 +1,7 @@
-import type { SalePayload, SalesDraft } from "../../lib/api/contracts.ts";
+import type { ProductRef, SalePayload, SalesDraft } from "../../lib/api/contracts.ts";
 
-export type ReviewRow = { id: string; name: string; quantity: string; unit: string; unitPrice: string };
+export type CatalogueSelection = { status: "unchecked" | "loading" | "matched" | "unmatched" | "error"; product: ProductRef | null; error?: string };
+export type ReviewRow = { id: string; name: string; quantity: string; unit: string; unitPrice: string; catalogue?: CatalogueSelection };
 export function draftRows(draft: SalesDraft): ReviewRow[] {
   return draft.items.map(item => ({ id: crypto.randomUUID(), name: item.name ?? "", quantity: item.quantity === null ? "" : String(item.quantity), unit: item.unit ?? "", unitPrice: item.unitPrice ?? "" }));
 }
@@ -30,12 +31,14 @@ export function validateReview(rows: ReviewRow[]) {
     lineTotals.push(Object.keys(error).length || line === null ? null : decimal(line));
     if (!Object.keys(error).length && line !== null && price !== null) {
       total += line;
-      items.push({ name: row.name.trim(), quantity: Number(row.quantity), unit: row.unit.trim(), unitPrice: decimal(price) });
+      items.push({ name: row.name.trim(), quantity: Number(row.quantity), unit: row.unit.trim(), unitPrice: decimal(price), ...(row.catalogue?.status === "matched" && row.catalogue.product ? { productId: row.catalogue.product.id } : {}) });
     }
   });
   const formError = rows.length < 1 ? "Add at least one item." : rows.length > 100 ? "Use no more than 100 items." : total > 99999999999999n ? "The sale total is too large." : null;
-  const valid = !formError && errors.every(error => !Object.keys(error).length);
-  return { valid, errors, formError, lineTotals, totalAmount: valid ? decimal(total) : null, payload: valid ? { items } : null };
+  const catalogueReady = rows.every(row => !row.catalogue || (row.catalogue.status === "matched" && !!row.catalogue.product));
+  const validAmounts = !formError && errors.every(error => !Object.keys(error).length);
+  const valid = validAmounts && catalogueReady;
+  return { valid, catalogueReady, errors, formError, lineTotals, totalAmount: validAmounts ? decimal(total) : null, payload: valid ? { items } : null };
 }
 export function formatNgn(value: string) {
   const [whole, fraction = ""] = value.split(".");

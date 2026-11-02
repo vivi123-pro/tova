@@ -1,5 +1,12 @@
 # Supabase development CA
 
+For the protected demo, see [DEPLOYMENT.md](../../../DEPLOYMENT.md).
+Set `DATABASE_CA_PATH` to a trusted certificate path on the deployment host.
+The runtime/migration helper resolves relative paths on the current OS, overrides
+obsolete URL CA paths and enables `verify-full`; production requires this setting.
+Offline client generation uses `prisma.generate.config.ts` and needs no database
+URL or certificate. The local URL instructions below remain valid for development.
+
 `prod-ca-2021.crt` was copied from the locally downloaded Supabase dashboard
 certificate. It is a public CA certificate, not a database credential.
 
